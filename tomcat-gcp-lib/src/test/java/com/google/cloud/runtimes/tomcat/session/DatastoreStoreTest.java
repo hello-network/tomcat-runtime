@@ -235,16 +235,6 @@ public class DatastoreStoreTest {
     assertEquals("map", keyCaptors.getValue().getName());
   }
 
-
-  @Test
-  public void testTracerActivation() throws Exception {
-    store.setTraceRequest(false);
-    assertNull(store.startSpan("span"));
-
-    store.setTraceRequest(true);
-    assertNotNull(store.startSpan("span"));
-  }
-
   /**
    * This is an helper class to mock the return of Datastore queries.
    */

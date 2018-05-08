@@ -27,9 +27,6 @@ import com.google.cloud.datastore.Query;
 import com.google.cloud.datastore.QueryResults;
 import com.google.cloud.datastore.StructuredQuery.PropertyFilter;
 import com.google.cloud.runtimes.tomcat.session.DatastoreSession.SessionMetadata;
-import com.google.cloud.trace.Trace;
-import com.google.cloud.trace.Tracer;
-import com.google.cloud.trace.core.TraceContext;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Streams;
@@ -73,11 +70,6 @@ public class DatastoreStore extends StoreBase {
    * Namespace to use in the Datastore.
    */
   private String namespace;
-
-  /**
-   * Whether or not to send traces to Stackdriver for the operations related to session persistence.
-   */
-  private boolean traceRequest = false;
 
   private Clock clock;
 
@@ -163,12 +155,10 @@ public class DatastoreStore extends StoreBase {
   @Override
   public Session load(String id) throws ClassNotFoundException, IOException {
     log.debug("Session " + id + " requested");
-    TraceContext context = startSpan("Loading session");
     Key sessionKey = newKey(id);
 
     DatastoreSession session = deserializeSession(sessionKey);
 
-    endSpan(context);
     log.debug("Session " + id + " loaded");
     return session;
   }
@@ -183,19 +173,15 @@ public class DatastoreStore extends StoreBase {
    */
   private DatastoreSession deserializeSession(Key sessionKey)
       throws ClassNotFoundException, IOException {
-    TraceContext loadingSessionContext = startSpan("Fetching the session from Datastore");
     Iterator<Entity> entities = datastore.run(Query.newEntityQueryBuilder()
         .setKind(sessionKind)
         .setFilter(PropertyFilter.hasAncestor(sessionKey))
         .build());
-    endSpan(loadingSessionContext);
 
     DatastoreSession session = null;
     if (entities.hasNext()) {
       session = (DatastoreSession) manager.createEmptySession();
-      TraceContext deserializationContext = startSpan("Deserialization of the session");
       session.restoreFromEntities(sessionKey, Lists.newArrayList(entities));
-      endSpan(deserializationContext);
     }
     return session;
   }
@@ -249,12 +235,10 @@ public class DatastoreStore extends StoreBase {
 
     List<Entity> entities = serializeSession(datastoreSession, sessionKey, attributeKeyFactory);
 
-    TraceContext datastoreSaveContext = startSpan("Storing the session in the Datastore");
     datastore.put(entities.toArray(new FullEntity[0]));
     datastore.delete(datastoreSession.getSuppressedAttributes().stream()
         .map(attributeKeyFactory::newKey)
         .toArray(Key[]::new));
-    endSpan(datastoreSaveContext);
   }
 
   /**
@@ -266,9 +250,7 @@ public class DatastoreStore extends StoreBase {
   @VisibleForTesting
   List<Entity> serializeSession(DatastoreSession session, Key sessionKey,
       KeyFactory attributeKeyFactory) throws IOException {
-    TraceContext serializationContext = startSpan("Serialization of the session");
     List<Entity> entities = session.saveToEntities(sessionKey, attributeKeyFactory);
-    endSpan(serializationContext);
     return entities;
   }
 
@@ -295,23 +277,6 @@ public class DatastoreStore extends StoreBase {
     datastore.delete(toDelete.toArray(Key[]::new));
   }
 
-  @VisibleForTesting
-  TraceContext startSpan(String spanName) {
-    TraceContext context = null;
-    if (traceRequest) {
-      context = Trace.getTracer().startSpan(spanName);
-    }
-    return context;
-  }
-
-  @VisibleForTesting
-  private void endSpan(TraceContext context) {
-    if (context != null) {
-      Tracer tracer = Trace.getTracer();
-      tracer.endSpan(context);
-    }
-  }
-
   /**
    * This property will be injected by Tomcat on startup.
    *
@@ -329,10 +294,9 @@ public class DatastoreStore extends StoreBase {
   }
 
   /**
-   * This property will be injected by Tomcat on startup.
+   * This property will be injected by Tomcat on startup. Not honored.
    */
   public void setTraceRequest(boolean traceRequest) {
-    this.traceRequest = traceRequest;
   }
 
   @VisibleForTesting
